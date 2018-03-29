@@ -1,11 +1,26 @@
-//#include <Arduino.h>
+/* FurBall - Cat wheel logging
+ * Copyright (C) 2018  Erik Ekedahl
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA. */
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
 #include <FS.h>  // flash file system.
-#include <Adafruit_ADS1015.h>
+#include <Adafruit_ADS1015.h>    // https://github.com/MrScrith/Adafruit_ADS1X15
 
 unsigned long timeNow = 0;
 unsigned long timeLast = 0;
@@ -43,6 +58,9 @@ int hours = startingHour;
  ******************************************************************************/
 ESP8266WebServer server(80);
 
+/*******************************************************************************
+ * Function Prototype Definitions
+ ******************************************************************************/
 void processTime();
 void getNistTime();
 void handleRoot();
@@ -51,6 +69,9 @@ void logDistance();
 String getContentType(String filename);
 bool handleFileRead(String path);
 
+/*******************************************************************************
+ * Function Implementations
+ ******************************************************************************/
 void setup(void)
 {
   // Turn on the power to Grove modules:
@@ -59,13 +80,13 @@ void setup(void)
 
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
-//  WiFiManager wifiManager;
+  WiFiManager wifiManager;
 
   Serial.begin(115200);
-  //WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_STA);
 
-  //wifiManager.autoConnect("CatWheel");
-/*
+  wifiManager.autoConnect("FurBall");
+
   Serial.println("");
 
   Serial.println("");
@@ -74,11 +95,11 @@ void setup(void)
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  if (MDNS.begin("wiolink")) {
+  if (MDNS.begin("FurBall")) {
     Serial.println("MDNS responder started");
     MDNS.addService("http", "tcp", 80);
   }
-*/
+
   server.on("/", handleRoot);
   // TODO:: setup serving files from the file system
   server.onNotFound(handleNotFound);
@@ -87,7 +108,7 @@ void setup(void)
   Serial.println("HTTP server started");
 
   // get the initial time set.
-  //getNistTime();
+  getNistTime();
 
   // Setup input/config button
   pinMode(CONFIG_BUTTON, INPUT);
@@ -99,7 +120,7 @@ void setup(void)
 
   Serial.println("Initializing ADC.");
   Wire.begin();
-  ads.setGain(GAIN_TWOTHIRDS);        // 1x gain   +/- 4.096V  1 bit = 2mV      0.125mV
+  ads.setGain(GAIN_TWOTHIRDS); // 1x gain   +/- 4.096V  1 bit = 2mV   0.125mV
   ads.begin();
 }
 
@@ -250,7 +271,7 @@ void handleRoot()
     s += "<p>Currently, cats have traveled " + String(distance) + " feet since last restart.</p>";
   }
   s += "</body></html>";
-  //client.print(s);
+  
   server.send(200, "text/html", s);
 }
 
