@@ -22,18 +22,17 @@
 #include <FS.h>  // flash file system.
 #include <Adafruit_ADS1015.h>    // https://github.com/MrScrith/Adafruit_ADS1X15
 
-unsigned long timeNow = 0;
-unsigned long timeLast = 0;
+uint32_t timeNow = 0;
+uint32_t timeLast = 0;
 
 const uint8_t GROVE_POWER = 15;
 const uint8_t CONFIG_BUTTON = 0;
 /* I don't want to bother logging if the cats haven't moved at least X feet
  * in the last 5 min. */
-const unsigned long DISTANCE_MIN = 12;
+const uint16_t DISTANCE_MIN = 12;
+String dateToday = "";
 
-const char* DISTANCE_LOG_FILE = "distance.log";
-
-unsigned long distance = 0;
+uint16_t distance = 0;
 bool pressed = false;
 
 bool updateLog = false;
@@ -44,14 +43,13 @@ Adafruit_ADS1115 ads(ADS1015_ADDRESS_SCL);
 /*******************************************************************************
  * Time Tracking vars start
  ******************************************************************************/
+uint8_t day = 1;
+uint8_t month = 1;
+uint8_t year = 18;
 
-String dateToday = "18-01-01"; // note: in year-month-day format.
-int startingHour = 12;
-// set your starting hour here, not below at int hour. This ensures accurate daily correction of time
-
-int seconds = 0;
-int minutes = 33;
-int hours = startingHour;
+uint8_t seconds = 0;
+uint8_t minutes = 33;
+uint8_t hours   = 12;
 
 /*******************************************************************************
  * Time Tracking vars end
@@ -68,6 +66,10 @@ void handleNotFound();
 void logDistance();
 String getContentType(String filename);
 bool handleFileRead(String path);
+bool packLogData( uint8_t  packStartBit,
+                  uint8_t  packLength,
+                  uint8_t* logData,
+                  uint16_t dataToPack );
 
 /*******************************************************************************
  * Function Implementations
@@ -95,7 +97,8 @@ void setup(void)
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  if (MDNS.begin("FurBall")) {
+  if (MDNS.begin("FurBall"))
+  {
     Serial.println("MDNS responder started");
     MDNS.addService("http", "tcp", 80);
   }
@@ -124,7 +127,8 @@ void setup(void)
   ads.begin();
 }
 
-void loop(void){
+void loop(void)
+{
   processTime();
   server.handleClient();
 
@@ -237,8 +241,8 @@ void getNistTime()
       String line = client.readStringUntil('\r');
 
       // get todays date and save it globaly
-      dateToday = line.substring(7, 15);
-
+      //dateToday = line.substring(7, 15);
+      // TODO Update substringing to pull date into byte values
       // get the time and get ready to parse it.
       String inTime = line.substring(16, 24);
 
@@ -271,7 +275,7 @@ void handleRoot()
     s += "<p>Currently, cats have traveled " + String(distance) + " feet since last restart.</p>";
   }
   s += "</body></html>";
-  
+
   server.send(200, "text/html", s);
 }
 
@@ -320,12 +324,5 @@ bool handleFileRead(String path)
 
 void logDistance()
 {
-  // before we do anything, make sure the log file exists.
-  if (!SPIFFS.exists(DISTANCE_LOG_FILE))
-  {
-    // Log file does not exist... create it.
-    SPIFFS.format();
-
-    File logFile = SPIFFS.open(DISTANCE_LOG_FILE,"a");
-  }
+  /* TODO Add MQTT implementation for sending info to MQTT broker. */
 }
