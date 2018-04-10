@@ -27,12 +27,12 @@ uint32_t timeLast = 0;
 
 const uint8_t GROVE_POWER = 15;
 const uint8_t CONFIG_BUTTON = 0;
-/* I don't want to bother logging if the cats haven't moved at least X feet
- * in the last 5 min. */
-const uint16_t DISTANCE_MIN = 12;
-String dateToday = "";
+/* This value will need to be updated as things go along. May look into making
+ * this a configurable value instead of a compile constant. */
+const uint16_t ADC_THRESHOLD = 1500;
 
 uint16_t distance = 0;
+uint8_t lastSegment = 0;
 bool pressed = false;
 
 bool updateLog = false;
@@ -66,10 +66,11 @@ void handleNotFound();
 void logDistance();
 String getContentType(String filename);
 bool handleFileRead(String path);
-bool packLogData( uint8_t  packStartBit,
-                  uint8_t  packLength,
-                  uint8_t* logData,
-                  uint16_t dataToPack );
+/* Binary/Gray conversion code taken from
+ * https://en.wikipedia.org/wiki/Gray_code
+ */
+uint8_t BinaryToGray(uint8_t num);
+uint8_t GrayToBinary(uint8_t num);
 
 /*******************************************************************************
  * Function Implementations
@@ -136,8 +137,8 @@ void loop(void)
   {
     if (!pressed)
     {
-      distance++;
       pressed = true;
+      uint8_t curSegment = 0x00;
 
       int16_t adc1, adc2, adc3, adc4;
 
@@ -146,7 +147,35 @@ void loop(void)
       adc3 = ads.readADC_SingleEnded(2);
       adc4 = ads.readADC_SingleEnded(3);
 
+      if ( adc1 >= ADC_THRESHOLD )
+      {
+        curSegment |= 0x01;
+      }
+
+      if ( adc2 >= ADC_THRESHOLD )
+      {
+        curSegment |= 0x02;
+      }
+
+      if ( adc3 >= ADC_THRESHOLD )
+      {
+        curSegment |= 0x04;
+      }
+
+      if ( adc4 >= ADC_THRESHOLD )
+      {
+        curSegment |= 0x08;
+      }
+
+
+
+
+
+
       Serial.println("Analog A1:" + String(adc1) + " A2:" + String(adc2) + " A3:" + String(adc3) + " A4:" + String(adc4));
+
+
+      //distance
     }
   }
   else
@@ -170,7 +199,6 @@ void loop(void)
      * minimum value it will be logged.*/
   }
 }
-
 
 void processTime()
 {
@@ -240,15 +268,20 @@ void getNistTime()
     {
       String line = client.readStringUntil('\r');
 
-      // get todays date and save it globaly
-      //dateToday = line.substring(7, 15);
-      // TODO Update substringing to pull date into byte values
+      // get todays date and get ready to parse it.
+      String dateToday = line.substring(7, 15);
+
       // get the time and get ready to parse it.
       String inTime = line.substring(16, 24);
 
       hours = inTime.substring(0,2).toInt();
       minutes = inTime.substring(3,5).toInt();
       seconds = inTime.substring(6,8).toInt();
+
+      // TODO test this to make sure it's being parsed correctly
+      year = dateToday.substring(0,2).toInt();
+      month = dateToday.substring(3,5).toInt();
+      day = dateToday.substring(6,8).toInt();
 
       Serial.println("Time: " + inTime);
       Serial.println("Date: " + dateToday);
@@ -325,4 +358,32 @@ bool handleFileRead(String path)
 void logDistance()
 {
   /* TODO Add MQTT implementation for sending info to MQTT broker. */
+}
+
+/*
+ * This function converts an unsigned binary
+ * number to reflected binary Gray code.
+ *
+ * The operator >> is shift right. The operator ^ is exclusive or.
+ */
+uint8_t BinaryToGray(uint8_t numBin)
+{
+  return (uint8_t)(numBin ^ (numBin >> 1));
+}
+
+/*
+* This function converts a reflected binary
+* Gray code number to a binary number.
+* Each Gray code bit is exclusive-ored with all
+* more significant bits.
+*/
+uint8_t GrayToBinary(uint8_t numGray)
+{
+  uint8_t mask = numGray;
+  while (mask != 0)
+  {
+    mask = mask >> 1;
+    numGray = numGray ^ mask;
+  }
+  return numGray;
 }
