@@ -21,6 +21,7 @@
 #include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
 #include <FS.h>  // flash file system.
 #include <Adafruit_ADS1015.h>    // https://github.com/MrScrith/Adafruit_ADS1X15
+#include <PubSubClient.h>
 
 uint32_t timeNow = 0;
 uint32_t timeLast = 0;
@@ -56,6 +57,12 @@ uint8_t hours   = 12;
  ******************************************************************************/
 ESP8266WebServer server(80);
 
+const char mqttServer[] = "10.0.1.15";
+const char mqttToken[] = "mdr6IOkiyMCdLqKnkiWC";
+const uint16_t mqttPort = 1883;
+WiFiClient client;
+PubSubClient psclient(client);
+
 /*******************************************************************************
  * Function Prototype Definitions
  ******************************************************************************/
@@ -66,6 +73,8 @@ void handleNotFound();
 void logDistance();
 String getContentType(String filename);
 bool handleFileRead(String path);
+void mqttReconnect();
+
 /* Binary/Gray conversion code taken from
  * https://en.wikipedia.org/wiki/Gray_code
  */
@@ -113,6 +122,9 @@ void setup(void)
 
   // get the initial time set.
   getNistTime();
+
+  // Initialize mqtt
+  psclient.setServer(mqttServer,mqttPort);
 
   // Setup input/config button
   pinMode(CONFIG_BUTTON, INPUT);
@@ -175,7 +187,7 @@ void loop(void)
       Serial.println("Analog A1:" + String(adc1) + " A2:" + String(adc2) + " A3:" + String(adc3) + " A4:" + String(adc4));
 
 
-      //distance
+      distance++;
     }
   }
   else
@@ -189,15 +201,16 @@ void loop(void)
     // clear flag so we don't keep logging.
     updateLog = false;
 
-    // Only log if we have reached the minimum distance.
-    if ( distance > DISTANCE_MIN)
-    {
-      logDistance();
-    }
-    /* NOTE: Distance will accumulate if not logged... so if the cat wheel turns
-     * for 1 foot every few minutes, eventually when distance reaches the
-     * minimum value it will be logged.*/
+    logDistance();
+
   }
+
+  if ( !psclient.connected() )
+  {
+    mqttReconnect();
+  }
+
+  psclient.loop();
 }
 
 void processTime()
@@ -249,7 +262,6 @@ void getNistTime()
 {
   const int timePort = 13;
   const char* host = "time.nist.gov";
-  WiFiClient client;
 
   if (!client.connect(host,timePort))
   {
@@ -286,6 +298,8 @@ void getNistTime()
       Serial.println("Time: " + inTime);
       Serial.println("Date: " + dateToday);
     }
+
+    client.stop();
   }
 }
 
@@ -357,7 +371,20 @@ bool handleFileRead(String path)
 
 void logDistance()
 {
-  /* TODO Add MQTT implementation for sending info to MQTT broker. */
+
+  // Prepare a JSON payload string
+  String payload = "{";
+  payload += "\"distance\":";
+  payload += distance;
+  payload += "}";
+
+  distance = 0;
+
+  // Send payload
+  char attributes[100];
+  payload.toCharArray( attributes, 100 );
+  psclient.publish( "v1/devices/me/telemetry", attributes );
+  Serial.println( attributes );
 }
 
 /*
@@ -386,4 +413,21 @@ uint8_t GrayToBinary(uint8_t numGray)
     numGray = numGray ^ mask;
   }
   return numGray;
+}
+
+void mqttReconnect() {
+  // Loop until we're reconnected
+  while (!psclient.connected()) {
+    Serial.print("Connecting to ThingsBoard node ...");
+    // Attempt to connect (clientId, username, password)
+    if ( psclient.connect("adae2390-3d32-11e8-8b9f-cd5b613d54ae", mqttToken, NULL) ) {
+      Serial.println( "[DONE]" );
+    } else {
+      Serial.print( "[FAILED] [ rc = " );
+      Serial.print( psclient.state() );
+      Serial.println( " : retrying in 5 seconds]" );
+      // Wait 5 seconds before retrying
+      delay( 5000 );
+    }
+  }
 }
