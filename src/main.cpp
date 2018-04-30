@@ -25,20 +25,44 @@
 
 uint32_t timeNow = 0;
 uint32_t timeLast = 0;
+uint32_t lastMeasureTime = 0;
 
 const uint8_t GROVE_POWER = 15;
 const uint8_t CONFIG_BUTTON = 0;
 /* This value will need to be updated as things go along. May look into making
  * this a configurable value instead of a compile constant. */
-const uint16_t ADC_THRESHOLD = 1500;
+const uint16_t ADC_THRESHOLD = 10000;
 
 uint16_t distance = 0;
-uint8_t lastSegment = 0;
+uint8_t lastIndex = 0;
+
+const uint8_t greyCode[] { 0x0, 0x1, 0x3, 0x2, 0x6, 0x7, 0x5, 0x4, 0xC, 0xD, 0xF, 0xE, 0xA, 0xB, 0x9, 0x8 };
+
+/* Grey code for position measurement:
+ * posiiton       grey  binary
+ *        0:         0:   0000
+ *        1:         1:   0001
+ *        2:         3:   0011
+ *        3:         2:   0010
+ *        4:         6:   0110
+ *        5:         7:   0111
+ *        6:         5:   0101
+ *        7:         4:   0100
+ *        8:        12:   1100
+ *        9:        13:   1101
+ *       10:        15:   1111
+ *       11:        14:   1110
+ *       12:        10:   1010
+ *       13:        11:   1011
+ *       14:         9:   1001
+ *       15:         8:   1000
+ */
+
 bool pressed = false;
 
 bool updateLog = false;
 
-Adafruit_ADS1115 ads(ADS1015_ADDRESS_SCL);
+Adafruit_ADS1115 ads(ADS1015_ADDRESS_GND);
 
 
 /*******************************************************************************
@@ -150,7 +174,6 @@ void loop(void)
     if (!pressed)
     {
       pressed = true;
-      uint8_t curSegment = 0x00;
 
       int16_t adc1, adc2, adc3, adc4;
 
@@ -159,33 +182,7 @@ void loop(void)
       adc3 = ads.readADC_SingleEnded(2);
       adc4 = ads.readADC_SingleEnded(3);
 
-      if ( adc1 >= ADC_THRESHOLD )
-      {
-        curSegment |= 0x01;
-      }
-
-      if ( adc2 >= ADC_THRESHOLD )
-      {
-        curSegment |= 0x02;
-      }
-
-      if ( adc3 >= ADC_THRESHOLD )
-      {
-        curSegment |= 0x04;
-      }
-
-      if ( adc4 >= ADC_THRESHOLD )
-      {
-        curSegment |= 0x08;
-      }
-
-
-
-
-
-
       Serial.println("Analog A1:" + String(adc1) + " A2:" + String(adc2) + " A3:" + String(adc3) + " A4:" + String(adc4));
-
 
       distance++;
     }
@@ -193,6 +190,60 @@ void loop(void)
   else
   {
     pressed = false;
+  }
+
+  // Check to see if it's been more than 10 milliseconds since last reading.
+  if ( (millis() - lastMeasureTime) > 10)
+  {
+    lastMeasureTime = millis();
+
+    uint8_t curSegment = 0x00;
+    uint8_t curIndex = 0;
+
+    int16_t adc1, adc2, adc3, adc4;
+
+    adc1 = ads.readADC_SingleEnded(0);
+    adc2 = ads.readADC_SingleEnded(1);
+    adc3 = ads.readADC_SingleEnded(2);
+    adc4 = ads.readADC_SingleEnded(3);
+
+    if ( adc1 >= ADC_THRESHOLD )
+    {
+      curSegment |= 0x01;
+    }
+
+    if ( adc2 >= ADC_THRESHOLD )
+    {
+      curSegment |= 0x02;
+    }
+
+    if ( adc3 >= ADC_THRESHOLD )
+    {
+      curSegment |= 0x04;
+    }
+
+    if ( adc4 >= ADC_THRESHOLD )
+    {
+      curSegment |= 0x08;
+    }
+
+    for ( uint8_t i = 0; i < 16; i++ )
+    {
+      if (greyCode[i] == curSegment)
+      {
+        curIndex = i;
+        break;
+      }
+    }
+
+    if ( curIndex != lastIndex )
+    {
+      /* I don't care what direction it is going in, so I won't bother with that
+       * calculation. I also make the assumption that it will not increment twice
+       * as then the cats would be going better than 53 miles an hour. */
+      lastIndex = curIndex;
+      distance++;
+    }
   }
 
 
@@ -375,7 +426,9 @@ void logDistance()
   // Prepare a JSON payload string
   String payload = "{";
   payload += "\"distance\":";
-  payload += distance;
+  /* Segments are about .78 inches long, so before sending the data I correct
+   * to the actual distance traveled instead of the segment count. */
+  payload += int(float(distance)*0.78);
   payload += "}";
 
   distance = 0;
